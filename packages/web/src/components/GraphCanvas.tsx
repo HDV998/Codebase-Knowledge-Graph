@@ -56,12 +56,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
   // Simulation state
   const nodesRef = useRef<(Node & { x: number; y: number; vx: number; vy: number; radius: number })[]>([]);
+  const alphaRef = useRef<number>(1.0); // Temperature / energy for cooling decay
   const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
   const [isPhysicsRunning, setIsPhysicsRunning] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
 
   // Camera transform: pan and zoom
-  const cameraRef = useRef({ x: 0, y: 0, scale: 1 });
+  const cameraRef = useRef({ x: 0, y: 0, scale: 0.85 });
   const isDraggingCanvas = useRef(false);
   const draggedNodeIndex = useRef<number | null>(null);
   const lastMousePos = useRef({ x: 0, y: 0 });
@@ -86,35 +86,60 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
     }
   };
 
-  // Initialize node layout positions
+  // Initialize node layout positions with clean hierarchical file-centric clustering
   useEffect(() => {
     if (!rawNodes || rawNodes.length === 0) {
       nodesRef.current = [];
       return;
     }
 
-    const width = containerRef.current?.clientWidth || 1000;
-    const height = containerRef.current?.clientHeight || 700;
+    const width = containerRef.current?.clientWidth || 1200;
+    const height = containerRef.current?.clientHeight || 800;
     const centerX = width / 2;
     const centerY = height / 2;
 
-    // Group nodes roughly by type/directory in orbital clusters
-    const initialized = rawNodes.map((n, i) => {
-      const angle = (i / rawNodes.length) * 2 * Math.PI;
-      let clusterDist = 220;
-      if (n.type === 'File') clusterDist = 320;
-      if (n.type === 'Class') clusterDist = 200;
-      if (n.type === 'Function') clusterDist = 120 + (i % 3) * 60;
-      if (n.type === 'Test') clusterDist = 380;
+    // 1. Separate file nodes and child nodes
+    const fileNodes = rawNodes.filter(n => n.type === 'File');
+    const nonFileNodes = rawNodes.filter(n => n.type !== 'File');
 
-      const x = centerX + Math.cos(angle) * clusterDist + (Math.random() - 0.5) * 40;
-      const y = centerY + Math.sin(angle) * clusterDist + (Math.random() - 0.5) * 40;
+    // Place File nodes in a spacious outer orbit
+    const filePositions = new Map<string, { x: number; y: number }>();
+    const fileOrbitRadius = Math.max(340, fileNodes.length * 45);
 
+    fileNodes.forEach((f, idx) => {
+      const angle = (idx / Math.max(fileNodes.length, 1)) * 2 * Math.PI - Math.PI / 2;
+      const x = centerX + Math.cos(angle) * fileOrbitRadius;
+      const y = centerY + Math.sin(angle) * fileOrbitRadius;
+      filePositions.set(f.filePath || f.name, { x, y });
+    });
+
+    // Place child functions/classes orbiting near their respective files
+    const fileChildCount = new Map<string, number>();
+
+    const initialized = rawNodes.map((n) => {
+      let x = centerX;
+      let y = centerY;
       let radius = 16;
-      if (n.type === 'File') radius = 22;
-      if (n.type === 'Class') radius = 20;
-      if (n.type === 'Function') radius = Math.min(26, 14 + (n.blastRadiusWeight || 1) * 1.5);
-      if (n.type === 'Test') radius = 18;
+
+      if (n.type === 'File') {
+        const pos = filePositions.get(n.filePath || n.name) || { x: centerX, y: centerY };
+        x = pos.x;
+        y = pos.y;
+        radius = 24;
+      } else {
+        const parentPos = filePositions.get(n.filePath || '') || { x: centerX, y: centerY };
+        const count = fileChildCount.get(n.filePath || '') || 0;
+        fileChildCount.set(n.filePath || '', count + 1);
+
+        const childAngle = (count * 1.1) + (Math.random() * 0.4);
+        const childDist = 80 + (count % 3) * 35;
+        x = parentPos.x + Math.cos(childAngle) * childDist;
+        y = parentPos.y + Math.sin(childAngle) * childDist;
+
+        if (n.type === 'Class') radius = 22;
+        else if (n.type === 'Test') radius = 20;
+        else radius = Math.min(26, 14 + (n.blastRadiusWeight || 1) * 1.4);
+      }
 
       return {
         ...n,
@@ -127,6 +152,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
     });
 
     nodesRef.current = initialized;
+    alphaRef.current = 1.0; // Reset simulation energy on data change
   }, [rawNodes]);
 
   // Main Canvas Rendering & Physics Loop
@@ -147,11 +173,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
       const edges = rawEdges;
       const hasHighlights = highlightedNodeIds.length > 0;
 
-      // 1. Run Force Simulation Step if Physics is active
-      if (isPhysicsRunning && nodes.length > 0) {
-        const k = 120; // optimal distance
-        const repulsion = 2200;
-        const centerGravity = 0.015;
+      // 1. Run Force Simulation Step with Alpha Annealing (Gradual cooling to zero motion)
+      if (isPhysicsRunning && nodes.length > 0 && (alphaRef.current > 0.002 || draggedNodeIndex.current !== null)) {
+        const alpha = alphaRef.current;
+        const k = 140; // optimal spring distance
+        const repulsion = 1800 * alpha;
+        const centerGravity = 0.003 * alpha;
         const centerX = width / 2;
         const centerY = height / 2;
 
@@ -161,7 +188,16 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
             const dx = nodes[j].x - nodes[i].x;
             const dy = nodes[j].y - nodes[i].y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            if (dist < 400) {
+            const minDist = nodes[i].radius + nodes[j].radius + 35;
+
+            // Strong collision repulsion if overlapping
+            if (dist < minDist) {
+              const overlapForce = ((minDist - dist) / dist) * 0.45;
+              nodes[i].vx -= dx * overlapForce;
+              nodes[i].vy -= dy * overlapForce;
+              nodes[j].vx += dx * overlapForce;
+              nodes[j].vy += dy * overlapForce;
+            } else if (dist < 320) {
               const force = (repulsion / (dist * dist));
               const fx = (dx / dist) * force;
               const fy = (dy / dist) * force;
@@ -182,7 +218,8 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
             const dx = tgt.x - src.x;
             const dy = tgt.y - src.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const springForce = (dist - k) * 0.035;
+            const springDist = edge.type === 'DEFINES' ? 90 : (edge.type === 'CALLS' ? 150 : 180);
+            const springForce = (dist - springDist) * 0.02 * alpha;
             const fx = (dx / dist) * springForce;
             const fy = (dy / dist) * springForce;
             src.vx += fx;
@@ -192,17 +229,20 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
           }
         }
 
-        // Center gravity and velocity damping
+        // Apply velocity with strong damping (friction) and gentle center gravity
         for (let i = 0; i < nodes.length; i++) {
           if (draggedNodeIndex.current === i) continue;
           const node = nodes[i];
           node.vx += (centerX - node.x) * centerGravity;
           node.vy += (centerY - node.y) * centerGravity;
-          node.vx *= 0.88;
-          node.vy *= 0.88;
+          node.vx *= 0.72; // Strong damping friction
+          node.vy *= 0.72;
           node.x += node.vx;
           node.y += node.vy;
         }
+
+        // Cool down the simulation alpha over time
+        alphaRef.current *= 0.985;
       }
 
       particleOffsetRef.current = (particleOffsetRef.current + 0.015) % 1;
@@ -444,6 +484,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
       node.y = worldPos.y;
       node.vx = 0;
       node.vy = 0;
+      alphaRef.current = Math.max(alphaRef.current, 0.2); // Gentle live spring response
     } else if (isDraggingCanvas.current) {
       const dx = e.clientX - lastMousePos.current.x;
       const dy = e.clientY - lastMousePos.current.y;

@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "baseUrl": ".",
+    "paths": {
+      "@codebase-kg/ingestion-engine": ["services/ingestion-engine/src/index.ts"],
+      "@codebase-kg/api-gateway": ["services/api-gateway/src/server.ts"],
+      "@/*": ["packages/web/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next"]
+}

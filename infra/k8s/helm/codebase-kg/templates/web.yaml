@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-web
+  labels:
+    app: {{ .Release.Name }}-web
+spec:
+  replicas: {{ .Values.web.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-web
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-web
+    spec:
+      containers:
+        - name: web
+          image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.web.service.port }}
+              name: http
+          env:
+            - name: NEXT_PUBLIC_GRAPHQL_ENDPOINT
+              value: "{{ .Values.web.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT }}"
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-web
+  labels:
+    app: {{ .Release.Name }}-web
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.web.service.port }}
+      targetPort: http
+      name: http
+  selector:
+    app: {{ .Release.Name }}-web

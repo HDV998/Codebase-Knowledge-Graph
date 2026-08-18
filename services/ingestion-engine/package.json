@@ -1,0 +1,24 @@
+{
+  "name": "@codebase-kg/ingestion-engine",
+  "version": "1.0.0",
+  "description": "Multi-language AST parser, call graph generator, and Neo4j ingestion pipeline",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "ingest": "ts-node src/cli.ts",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.5",
+    "glob": "^10.3.10",
+    "neo4j-driver": "^5.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

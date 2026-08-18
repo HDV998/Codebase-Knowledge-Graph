@@ -1,0 +1,8 @@
+apiVersion: v2
+name: codebase-kg
+description: Enterprise Codebase Knowledge Graph with Neo4j, Apollo GraphQL API, and AI Cypher Translation Engine
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Core Platform & DevTooling Engineering

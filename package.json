@@ -1,0 +1,27 @@
+{
+  "name": "codebase-knowledge-graph-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-Queryable Codebase Knowledge Graph with Tree-Sitter AST, Neo4j, GraphQL, and Claude AI Cypher Engine",
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"api,web\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm run dev --workspace=services/api-gateway\" \"npm run dev --workspace=packages/web\"",
+    "dev:api": "npm run dev --workspace=services/api-gateway",
+    "dev:web": "npm run dev --workspace=packages/web",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "ingest": "npm run ingest --workspace=services/ingestion-engine",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

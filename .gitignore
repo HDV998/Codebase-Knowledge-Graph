@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+build/
+coverage/
+*.log
+.env
+.env.local
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.neo4j-data/
+scratch/

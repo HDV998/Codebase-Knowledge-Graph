@@ -29,6 +29,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   repoId,
   onApplySubgraphHighlight
 }) => {
+  const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -51,7 +52,8 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   ];
 
   const handleAsk = async (queryText: string) => {
-    if (!queryText.trim()) return;
+    if (!queryText.trim() || loading) return;
+    setError(null);
     setLoading(true);
     try {
       const data = await fetchGraphQL(ASK_CODEBASE_QUERY, {
@@ -65,7 +67,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
         }
       }
     } catch (err: any) {
-      console.error('AI Query failed:', err);
+      setError(err instanceof Error ? err.message : 'Could not answer this question. Try again.');
     } finally {
       setLoading(false);
     }
@@ -81,7 +83,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed right-0 top-16 bottom-0 w-full sm:w-[480px] bg-surface/95 backdrop-blur-xl border-l border-border z-40 flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
+    <div className="absolute right-0 top-0 bottom-0 w-full sm:w-[480px] bg-surface/95 backdrop-blur-xl border-l border-border z-40 flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between bg-surface-highlight/50">
         <div className="flex items-center gap-2.5">
@@ -94,6 +96,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
           </div>
         </div>
         <button
+          aria-label="Close codebase questions"
           onClick={onClose}
           className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-highlight transition-colors"
         >
@@ -103,6 +106,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
 
       {/* Main Content / Chat Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {error && <p className="text-sm text-rose-300" role="alert">{error}</p>}
         {/* Prompt Suggestions */}
         {!result && !loading && (
           <div className="space-y-3 pt-2">
@@ -194,6 +198,8 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
             type="text"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
+            aria-label="Codebase question"
+            maxLength={1000}
             placeholder="Ask anything (e.g., What breaks if I change X?)..."
             className="flex-1 bg-transparent px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
           />

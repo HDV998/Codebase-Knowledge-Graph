@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from '../components/Header';
-import { GraphCanvas } from '../components/GraphCanvas';
-import { AICopilotDrawer } from '../components/AICopilotDrawer';
+import dynamic from 'next/dynamic';
 import { BlastRadiusSidebar } from '../components/BlastRadiusSidebar';
-import { CodeViewerModal } from '../components/CodeViewerModal';
-import { IngestModal } from '../components/IngestModal';
 import { fetchGraphQL, GET_GRAPH_DATA_QUERY, GET_BLAST_RADIUS_QUERY } from '../lib/graphqlClient';
 import { Loader2, AlertCircle } from 'lucide-react';
+
+const GraphCanvas = dynamic(() => import('../components/GraphCanvas').then(module => module.GraphCanvas), { ssr: false });
+const AICopilotDrawer = dynamic(() => import('../components/AICopilotDrawer').then(module => module.AICopilotDrawer), { ssr: false });
+const CodeViewerModal = dynamic(() => import('../components/CodeViewerModal').then(module => module.CodeViewerModal), { ssr: false });
+const IngestModal = dynamic(() => import('../components/IngestModal').then(module => module.IngestModal), { ssr: false });
 
 export default function Home() {
   const [repositories, setRepositories] = useState<any[]>([
@@ -20,6 +22,10 @@ export default function Home() {
   const [nodes, setNodes] = useState<any[]>([]);
   const [edges, setEdges] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(undefined);
+  const [itemId, setItemId] = useState('');
+  const [reload, setReload] = useState(0);
+  const analysisRequest = useRef<AbortController | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,19 +36,25 @@ export default function Home() {
 
   // Modals & Panels
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [hasOpenedCopilot, setHasOpenedCopilot] = useState(false);
   const [blastRadiusReport, setBlastRadiusReport] = useState<any | null>(null);
   const [codeViewerNode, setCodeViewerNode] = useState<any | null>(null);
   const [isIngestOpen, setIsIngestOpen] = useState(false);
 
   // Load Graph Data from GraphQL API
-  const loadGraph = useCallback(async (repoId: string, filter: string) => {
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    async function loadGraph() {
     setLoading(true);
     setError(null);
     try {
       const data = await fetchGraphQL(GET_GRAPH_DATA_QUERY, {
-        repoId,
-        filterType: filter === 'ALL' ? null : filter
-      });
+        repoId: selectedRepoId,
+        filterType: filterType === 'ALL' ? null : filterType,
+        limit: 300
+      }, signal);
+      if (signal.aborted) return;
 
       if (data) {
         if (data.repositories && data.repositories.length > 0) {
@@ -57,26 +69,33 @@ export default function Home() {
         }
       }
     } catch (err: any) {
-      console.error('Failed to load graph data:', err);
+      if (signal.aborted) return;
       setError(err.message || 'Could not connect to GraphQL API Gateway');
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    loadGraph(selectedRepoId, filterType);
-  }, [selectedRepoId, filterType, loadGraph]);
+    }
+    void loadGraph();
+    return () => {
+      controller.abort();
+      analysisRequest.current?.abort();
+    };
+  }, [selectedRepoId, filterType, reload]);
 
   // Handle Blast Radius Trigger
   const handleAnalyzeBlastRadius = async (node: any) => {
+    analysisRequest.current?.abort();
+    const controller = new AbortController();
+    analysisRequest.current = controller;
+    setAnalysisError(null);
     try {
       const data = await fetchGraphQL(GET_BLAST_RADIUS_QUERY, {
         nodeId: node.id,
         repoId: selectedRepoId,
         maxDepth: 3,
         direction: 'UPSTREAM'
-      });
+      }, controller.signal);
+      if (controller.signal.aborted) return;
 
       if (data && data.blastRadius) {
         setBlastRadiusReport(data.blastRadius);
@@ -85,7 +104,7 @@ export default function Home() {
         setSelectedNode(node);
       }
     } catch (err) {
-      console.error('Failed to calculate blast radius:', err);
+      if (!controller.signal.aborted) setAnalysisError('Could not calculate change impact. Select the node again to retry.');
     }
   };
 
@@ -100,43 +119,65 @@ export default function Home() {
   };
 
   return (
-    <main className="flex flex-col h-screen w-screen bg-[#070b12] text-slate-100 overflow-hidden">
+    <main className="flex flex-col h-[100dvh] w-full bg-[#0b1020] text-slate-100 overflow-hidden">
       {/* Top Header */}
       <Header
         repositories={repositories}
         selectedRepoId={selectedRepoId}
         onSelectRepo={(id) => {
           setSelectedRepoId(id);
+          setItemId('');
+          setSelectedNode(null);
+          setCodeViewerNode(null);
+          setAnalysisError(null);
           setHighlightedNodeIds([]);
           setHighlightedEdgeIds([]);
           setBlastRadiusReport(null);
         }}
         stats={stats}
         filterType={filterType}
-        onFilterChange={setFilterType}
+        onFilterChange={(value) => { setFilterType(value); setItemId(''); setAnalysisError(null); }}
         onOpenIngest={() => setIsIngestOpen(true)}
-        onToggleCopilot={() => setIsCopilotOpen(!isCopilotOpen)}
+        onToggleCopilot={() => {
+          setHasOpenedCopilot(true);
+          setIsCopilotOpen(value => !value);
+        }}
         isCopilotOpen={isCopilotOpen}
       />
 
+      <div className="graph-toolbar">
+        <label htmlFor="graph-item">Inspect an entity</label>
+        <select id="graph-item" value={itemId} disabled={loading || !!error || !nodes.length} onChange={(event) => {
+          const id = event.target.value;
+          setItemId(id);
+          const node = nodes.find(entry => entry.id === id);
+          if (node) handleSelectNode(node);
+        }}>
+          <option value="" disabled>Choose a visible node</option>
+          {nodes.map(node => <option key={node.id} value={node.id}>{node.name} · {node.type}</option>)}
+        </select>
+        {!loading && !error && <span>{nodes.length}{nodes.length === 300 && ' (display limit)'} visible nodes</span>}
+      </div>
+      {analysisError && <p className="graph-toolbar text-rose-300" role="alert">{analysisError}</p>}
       {/* Main Canvas Area */}
-      <div className="flex-1 relative w-full h-full">
+      <div className="flex-1 relative w-full min-h-0">
         {loading && (
-          <div className="absolute inset-0 z-20 bg-[#070b12]/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+          <div role="status" className="absolute inset-0 z-20 bg-[#070b12]/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-9 h-9 text-sky-400 animate-spin" />
             <p className="text-sm font-medium text-slate-300">Loading codebase AST & call graph...</p>
           </div>
         )}
 
         {error && (
-          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-30 bg-rose-500/10 border border-rose-500/30 text-rose-300 px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs shadow-xl">
+          <div role="alert" className="absolute top-8 left-1/2 -translate-x-1/2 z-30 bg-rose-500/10 border border-rose-500/30 text-rose-300 px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs shadow-xl">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{error} — ensure API Gateway is running on port 4000.</span>
+            <span>{error}</span>
+            <button className="underline" onClick={() => setReload(value => value + 1)}>Retry</button>
           </div>
         )}
 
         {/* 2D Interactive Force Canvas */}
-        <GraphCanvas
+        {!error && !loading && <GraphCanvas
           nodes={nodes}
           edges={edges}
           highlightedNodeIds={highlightedNodeIds}
@@ -144,7 +185,7 @@ export default function Home() {
           onSelectNode={handleSelectNode}
           onAnalyzeBlastRadius={handleAnalyzeBlastRadius}
           selectedNodeId={selectedNode?.id}
-        />
+        />}
 
         {/* Left Blast Radius Inspector Sidebar */}
         <BlastRadiusSidebar
@@ -159,26 +200,38 @@ export default function Home() {
         />
 
         {/* Right AI Copilot Drawer */}
-        <AICopilotDrawer
+        {hasOpenedCopilot && <AICopilotDrawer
+          key={selectedRepoId}
           isOpen={isCopilotOpen}
           onClose={() => setIsCopilotOpen(false)}
           repoId={selectedRepoId}
           onApplySubgraphHighlight={handleApplySubgraphHighlight}
-        />
+        />}
 
         {/* AST Code Viewer Modal */}
-        <CodeViewerModal
+        {codeViewerNode && <CodeViewerModal
           node={codeViewerNode}
           onClose={() => setCodeViewerNode(null)}
           onAnalyzeBlastRadius={handleAnalyzeBlastRadius}
-        />
+        />}
 
         {/* Ingest Repository Modal */}
-        <IngestModal
+        {isIngestOpen && <IngestModal
           isOpen={isIngestOpen}
           onClose={() => setIsIngestOpen(false)}
-          onIngestSuccess={() => loadGraph(selectedRepoId, filterType)}
-        />
+          onIngestSuccess={(id: string) => {
+            setRepositories(items => items.some(item => item.id === id) ? items : [...items, { id, name: id, branch: 'main' }]);
+            setSelectedRepoId(id);
+            setFilterType('ALL');
+            setItemId('');
+            setSelectedNode(null);
+            setBlastRadiusReport(null);
+            setHighlightedNodeIds([]);
+            setHighlightedEdgeIds([]);
+            setAnalysisError(null);
+            setReload(value => value + 1);
+          }}
+        />}
       </div>
     </main>
   );

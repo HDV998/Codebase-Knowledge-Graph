@@ -418,7 +418,8 @@ def test_password_hashing():
  * Load and parse sample codebases into KnowledgeGraphData objects
  */
 export function loadSampleCodebaseGraph(repoId: string) {
-  const repoDef = SAMPLE_CODEBASES.find(r => r.id === repoId) || SAMPLE_CODEBASES[0];
+  const repoDef = SAMPLE_CODEBASES.find(r => r.id === repoId);
+  if (!repoDef) throw new Error("Unknown sample repository.");
   const parser = new CodeParser(repoDef.id);
   const parsedResults: ParsedFileResult[] = [];
 

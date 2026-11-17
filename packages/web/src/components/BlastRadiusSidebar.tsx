@@ -62,7 +62,7 @@ export const BlastRadiusSidebar: React.FC<BlastRadiusSidebarProps> = ({
   };
 
   return (
-    <div className="fixed left-0 top-16 bottom-0 w-full sm:w-[460px] bg-surface/95 backdrop-blur-xl border-r border-border z-40 flex flex-col shadow-2xl animate-in slide-in-from-left duration-200">
+    <div className="absolute left-0 top-0 bottom-0 w-full sm:w-[460px] bg-surface/95 backdrop-blur-xl border-r border-border z-40 flex flex-col shadow-2xl animate-in slide-in-from-left duration-200">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between bg-surface-highlight/50">
         <div className="flex items-center gap-2.5">

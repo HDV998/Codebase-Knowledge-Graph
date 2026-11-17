@@ -1,4 +1,27 @@
 import { neo4jService } from './neo4jClient';
+import type { BaseNode, GraphEdge, KnowledgeGraphData } from '../../ingestion-engine/src/types';
+
+function indexGraph(store: KnowledgeGraphData) {
+  const nodes = new Map(store.nodes.map(node => [node.id, node]));
+  const upstream = new Map<string, GraphEdge[]>();
+  const downstream = new Map<string, GraphEdge[]>();
+  const testsByTarget = new Map<string, GraphEdge[]>();
+  const add = (index: Map<string, GraphEdge[]>, key: string, edge: GraphEdge) => {
+    const edges = index.get(key);
+    if (edges) edges.push(edge);
+    else index.set(key, [edge]);
+  };
+  for (const edge of store.edges) {
+    if (edge.type === 'CALLS' || edge.type === 'IMPORTS') {
+      add(downstream, edge.source, edge);
+      add(upstream, edge.target, edge);
+    } else if (edge.type === 'HAS_METHOD') {
+      add(upstream, edge.target, edge);
+    }
+    if (nodes.get(edge.source)?.type === 'Test') add(testsByTarget, edge.target, edge);
+  }
+  return { nodes, upstream, downstream, testsByTarget };
+}
 
 export interface ImpactedNodeResult {
   node: any;
@@ -22,6 +45,7 @@ export interface BlastRadiusReport {
 }
 
 export class BlastRadiusEngine {
+  private indexes = new WeakMap<KnowledgeGraphData, ReturnType<typeof indexGraph>>();
   public calculateBlastRadius(
     nodeId: string, 
     repoId: string, 
@@ -33,7 +57,15 @@ export class BlastRadiusEngine {
       throw new Error(`Repository ${repoId} not found`);
     }
 
-    const targetNode = store.nodes.find(n => n.id === nodeId || n.name === nodeId);
+    if (!Number.isInteger(maxDepth) || maxDepth < 0 || maxDepth > 20) {
+      throw new Error('Traversal depth must be an integer between 0 and 20.');
+    }
+    let index = this.indexes.get(store);
+    if (!index) {
+      index = indexGraph(store);
+      this.indexes.set(store, index);
+    }
+    const targetNode = index.nodes.get(nodeId) ?? store.nodes.find(node => node.name === nodeId);
     if (!targetNode) {
       throw new Error(`Node with ID or name '${nodeId}' not found in codebase`);
     }
@@ -41,23 +73,23 @@ export class BlastRadiusEngine {
     const visitedNodeIds = new Set<string>([targetNode.id]);
     const highlightedEdges = new Set<string>();
     const impactedNodes: ImpactedNodeResult[] = [];
-    const affectedTests: any[] = [];
-    const affectedFiles = new Set<string>([targetNode.filePath || '']);
+    const affectedTests = new Map<string, BaseNode>();
+    const affectedFiles = new Set<string>(targetNode.filePath ? [targetNode.filePath] : []);
 
     // Queue for BFS traversal
     // [nodeId, currentDepth, pathSoFar]
     const queue: [string, number, string[]][] = [[targetNode.id, 0, [targetNode.name]]];
 
-    while (queue.length > 0) {
-      const [currId, depth, path] = queue.shift()!;
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const [currId, depth, path] = queue[cursor];
       if (depth >= maxDepth) continue;
 
       // 1. Upstream callers (Edges where target is currId and type is CALLS, IMPORTS, or DEFINES)
       if (direction === 'UPSTREAM' || direction === 'BOTH') {
-        const upstreamEdges = store.edges.filter(e => e.target === currId && (e.type === 'CALLS' || e.type === 'IMPORTS' || e.type === 'HAS_METHOD'));
+        const upstreamEdges = index.upstream.get(currId) ?? [];
         for (const edge of upstreamEdges) {
           highlightedEdges.add(edge.id);
-          const callerNode = store.nodes.find(n => n.id === edge.source);
+          const callerNode = index.nodes.get(edge.source);
           if (callerNode && !visitedNodeIds.has(callerNode.id)) {
             visitedNodeIds.add(callerNode.id);
             if (callerNode.filePath) affectedFiles.add(callerNode.filePath);
@@ -80,10 +112,10 @@ export class BlastRadiusEngine {
 
       // 2. Downstream callees (Edges where source is currId and type is CALLS)
       if (direction === 'DOWNSTREAM' || direction === 'BOTH') {
-        const downstreamEdges = store.edges.filter(e => e.source === currId && (e.type === 'CALLS' || e.type === 'IMPORTS'));
+        const downstreamEdges = index.downstream.get(currId) ?? [];
         for (const edge of downstreamEdges) {
           highlightedEdges.add(edge.id);
-          const calleeNode = store.nodes.find(n => n.id === edge.target);
+          const calleeNode = index.nodes.get(edge.target);
           if (calleeNode && !visitedNodeIds.has(calleeNode.id)) {
             visitedNodeIds.add(calleeNode.id);
             if (calleeNode.filePath) affectedFiles.add(calleeNode.filePath);
@@ -103,12 +135,11 @@ export class BlastRadiusEngine {
     }
 
     // 3. Find all connected Tests
-    const allImpactedIds = Array.from(visitedNodeIds);
-    for (const testNode of store.nodes.filter(n => n.type === 'Test')) {
-      const testEdges = store.edges.filter(e => e.source === testNode.id && allImpactedIds.includes(e.target));
-      if (testEdges.length > 0) {
-        affectedTests.push(testNode);
-        for (const te of testEdges) highlightedEdges.add(te.id);
+    for (const id of visitedNodeIds) {
+      for (const edge of index.testsByTarget.get(id) ?? []) {
+        const test = index.nodes.get(edge.source);
+        if (test) affectedTests.set(test.id, test);
+        highlightedEdges.add(edge.id);
       }
     }
 
@@ -125,14 +156,14 @@ export class BlastRadiusEngine {
       riskLevel = 'MEDIUM';
     }
 
-    const summary = `Modifying '${targetNode.name}' directly impacts ${affectedFuncs} functions across ${affectedFiles.size} files, with ${affectedTests.length} test suites directly covering this call graph. Risk level assessed as ${riskLevel} (${totalImpactScore.toFixed(1)} pts).`;
+    const summary = `Modifying '${targetNode.name}' directly impacts ${affectedFuncs} functions across ${affectedFiles.size} files, with ${affectedTests.size} test suites directly covering this call graph. Risk level assessed as ${riskLevel} (${totalImpactScore.toFixed(1)} pts).`;
 
     return {
       targetNode,
       riskScore: Number(totalImpactScore.toFixed(2)),
       riskLevel,
       impactedNodes,
-      affectedTests,
+      affectedTests: [...affectedTests.values()],
       affectedFilesCount: affectedFiles.size,
       affectedFunctionsCount: affectedFuncs,
       summary,

@@ -20,6 +20,8 @@ export class AIEngine {
       throw new Error(`Repository ${repoId} not found`);
     }
 
+    if (!question.trim() || question.length > 1000) throw new Error('Enter a question of 1–1,000 characters.');
+    if (!store.nodes.length) throw new Error('This repository has no entities to query.');
     const qLower = question.toLowerCase();
 
     // 1. Identify Target Symbols mentioned in the question

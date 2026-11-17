@@ -20,7 +20,7 @@ export const resolvers = {
     },
 
     blastRadius: (_: any, { nodeId, repoId, maxDepth, direction }: { nodeId: string; repoId: string; maxDepth?: number; direction?: 'UPSTREAM' | 'DOWNSTREAM' | 'BOTH' }) => {
-      return blastRadiusEngine.calculateBlastRadius(nodeId, repoId, maxDepth || 3, direction || 'UPSTREAM');
+      return blastRadiusEngine.calculateBlastRadius(nodeId, repoId, maxDepth ?? 3, direction || 'UPSTREAM');
     },
 
     askCodebase: async (_: any, { question, repoId }: { question: string; repoId: string }) => {
@@ -87,6 +87,13 @@ export const resolvers = {
     },
 
     ingestCustomCodebase: async (_: any, { repoId, files }: { repoId: string; files: { path: string; content: string }[] }) => {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(repoId)) {
+        throw new Error('Use a repository ID with 1–64 letters, digits, dots, underscores, or hyphens.');
+      }
+      if (neo4jService.getStore(repoId)) throw new Error('Repository ID already exists.');
+      if (files.length < 1 || files.length > 100) throw new Error('Submit 1–100 source files.');
+      const paths = files.map(file => file.path.replace(/\\/g, '/'));
+      if (new Set(paths).size !== files.length) throw new Error('Each source file must have a unique path.');
       const parser = new CodeParser(repoId);
       const parsedResults = [];
 

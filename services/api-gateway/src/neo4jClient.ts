@@ -25,7 +25,8 @@ export class Neo4jService {
 
     try {
       this.driver = neo4j.driver(uri, neo4j.auth.basic(user, password), {
-        connectionTimeout: 4000
+        connectionTimeout: 2000,
+        connectionAcquisitionTimeout: 3000
       });
       await this.driver.getServerInfo();
       this.isConnected = true;
@@ -34,6 +35,8 @@ export class Neo4jService {
     } catch (err: any) {
       console.log(`[Neo4jService] Neo4j not reachable (${err.message}). Using high-speed embedded graph store.`);
       this.isConnected = false;
+      await this.driver?.close();
+      this.driver = null;
       return false;
     }
   }
@@ -42,21 +45,22 @@ export class Neo4jService {
     return this.isConnected;
   }
 
-  public getRepositories(): any[] {
-    const repos = [];
-    for (const [id, store] of this.inMemoryStores.entries()) {
-      repos.push(store.repository);
-    }
-    return repos;
+  public getRepositories() {
+    return [...this.inMemoryStores.entries()].map(([id, store]) => this.repositoryMetadata(id, store));
   }
 
-  public getRepository(id: string): any {
-    const store = this.inMemoryStores.get(id);
-    return store ? store.repository : null;
+  public getRepository(id: string) {
+    const store = this.getStore(id);
+    return store ? this.repositoryMetadata(store.repository.repoId, store) : null;
+  }
+
+  private repositoryMetadata(id: string, store: KnowledgeGraphData) {
+    const sample = SAMPLE_CODEBASES.find(entry => entry.id === id);
+    return { ...store.repository, id, name: sample?.name ?? store.repository.name };
   }
 
   public getGraphData(repoId: string, filterType?: string, limit?: number): { nodes: any[]; edges: any[] } {
-    const store = this.inMemoryStores.get(repoId) || this.inMemoryStores.get('ecommerce-payment-platform');
+    const store = this.getStore(repoId);
     if (!store) return { nodes: [], edges: [] };
 
     let nodes = store.nodes;
@@ -64,26 +68,22 @@ export class Neo4jService {
       nodes = nodes.filter(n => n.type === filterType);
     }
 
+    if (limit != null && limit >= 0) nodes = nodes.slice(0, limit);
     const nodeIds = new Set(nodes.map(n => n.id));
-    let edges = store.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
-
-    if (limit && limit > 0) {
-      nodes = nodes.slice(0, limit);
-      const limitedIds = new Set(nodes.map(n => n.id));
-      edges = edges.filter(e => limitedIds.has(e.source) && limitedIds.has(e.target));
-    }
+    const edges = store.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
 
     return { nodes, edges };
   }
 
   public getNodeById(id: string, repoId: string): any {
-    const store = this.inMemoryStores.get(repoId) || this.inMemoryStores.get('ecommerce-payment-platform');
+    const store = this.getStore(repoId);
     if (!store) return null;
     return store.nodes.find(n => n.id === id || n.name === id);
   }
 
   public getStore(repoId: string): KnowledgeGraphData | undefined {
-    return this.inMemoryStores.get(repoId) || this.inMemoryStores.get('ecommerce-payment-platform');
+    return this.inMemoryStores.get(repoId)
+      ?? (repoId.startsWith('repo:') ? this.inMemoryStores.get(repoId.slice(5)) : undefined);
   }
 
   public setStore(repoId: string, data: KnowledgeGraphData) {

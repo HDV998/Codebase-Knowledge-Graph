@@ -5,7 +5,7 @@ export interface GraphQLResponse<T = any> {
 
 const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:4000/graphql';
 
-export async function fetchGraphQL<T = any>(query: string, variables: Record<string, any> = {}): Promise<T> {
+export async function fetchGraphQL<T = any>(query: string, variables: Record<string, any> = {}, signal?: AbortSignal): Promise<T> {
   try {
     const res = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
@@ -13,7 +13,8 @@ export async function fetchGraphQL<T = any>(query: string, variables: Record<str
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ query, variables }),
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)
     });
 
     if (!res.ok) {
@@ -27,7 +28,6 @@ export async function fetchGraphQL<T = any>(query: string, variables: Record<str
 
     return result.data as T;
   } catch (error: any) {
-    console.error('GraphQL Query Error:', error);
     throw error;
   }
 }

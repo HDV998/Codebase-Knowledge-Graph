@@ -3,7 +3,7 @@ import cors from 'cors';
 import http from 'http';
 import dotenv from 'dotenv';
 import { ApolloServer } from '@apollo/server';
-import { expressMiddleware } from '@apollo/server/express4';
+import { expressMiddleware } from '@as-integrations/express5';
 import { typeDefs } from './schema';
 import { resolvers } from './resolvers';
 import { neo4jService } from './neo4jClient';
@@ -29,10 +29,9 @@ async function startServer() {
   await server.start();
 
   app.use(cors({
-    origin: '*',
-    credentials: true
+    origin: process.env.CORS_ORIGIN || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
   }));
-  app.use(express.json({ limit: '50mb' }));
+  app.use(express.json({ limit: '2mb' }));
 
   // Health check endpoint
   app.get('/health', (req, res) => {

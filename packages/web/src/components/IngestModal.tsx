@@ -7,7 +7,7 @@ import { fetchGraphQL } from '../lib/graphqlClient';
 interface IngestModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onIngestSuccess: () => void;
+  onIngestSuccess: (repoId: string) => void;
 }
 
 export const IngestModal: React.FC<IngestModalProps> = ({
@@ -16,6 +16,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
   onIngestSuccess
 }) => {
   const [activeTab, setActiveTab] = useState<'preset' | 'custom'>('preset');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [customRepoName, setCustomRepoName] = useState('my-custom-service');
   const [filePath, setFilePath] = useState('src/services/CustomPaymentService.ts');
@@ -36,6 +37,7 @@ export class CustomPaymentService {
   if (!isOpen) return null;
 
   const handleSeedPreset = async (presetId: string) => {
+    setError(null);
     setLoading(true);
     try {
       const mutation = `
@@ -43,16 +45,17 @@ export class CustomPaymentService {
           ingestSampleRepo(sampleId: $id) {
             success
             message
+            repoId
             nodesCount
             edgesCount
           }
         }
       `;
-      await fetchGraphQL(mutation, { id: presetId });
-      onIngestSuccess();
+      const data = await fetchGraphQL(mutation, { id: presetId });
+      onIngestSuccess(data.ingestSampleRepo.repoId);
       onClose();
     } catch (err) {
-      console.error('Failed to ingest preset:', err);
+      setError(err instanceof Error ? err.message : 'Could not load this sample.');
     } finally {
       setLoading(false);
     }
@@ -60,6 +63,7 @@ export class CustomPaymentService {
 
   const handleIngestCustom = async () => {
     if (!customRepoName.trim() || !filePath.trim() || !fileContent.trim()) return;
+    setError(null);
     setLoading(true);
     try {
       const mutation = `
@@ -67,19 +71,20 @@ export class CustomPaymentService {
           ingestCustomCodebase(repoId: $repoId, files: $files) {
             success
             message
+            repoId
             nodesCount
             edgesCount
           }
         }
       `;
-      await fetchGraphQL(mutation, {
+      const data = await fetchGraphQL(mutation, {
         repoId: customRepoName,
         files: [{ path: filePath, content: fileContent }]
       });
-      onIngestSuccess();
+      onIngestSuccess(data.ingestCustomCodebase.repoId);
       onClose();
     } catch (err) {
-      console.error('Failed to ingest custom code:', err);
+      setError(err instanceof Error ? err.message : 'Could not ingest this file.');
     } finally {
       setLoading(false);
     }
@@ -87,7 +92,8 @@ export class CustomPaymentService {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
-      <div className="bg-surface border border-border w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+      <div role="dialog" aria-modal="true" aria-label="Ingest code" className="bg-surface border border-border w-full max-w-xl max-h-[90dvh] rounded-2xl shadow-2xl overflow-auto flex flex-col">
+        {error && <p role="alert" className="p-4 text-rose-300">{error}</p>}
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between bg-surface-highlight">
           <div className="flex items-center gap-2.5">
@@ -96,10 +102,11 @@ export class CustomPaymentService {
             </div>
             <div>
               <h3 className="font-bold text-sm text-white">Ingest Codebase Knowledge Graph</h3>
-              <p className="text-xs text-slate-400">Parse AST entities into Neo4j graph nodes & edges</p>
+              <p className="text-xs text-slate-400">Extract symbols and relationships from source files</p>
             </div>
           </div>
           <button
+            aria-label="Close ingestion dialog"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface transition-colors"
           >

@@ -45,3 +45,39 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.6);
 }
+
+:root { color-scheme: dark; --background: #0b1020; --foreground: #eef3ff; }
+.graph-header, .graph-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .65rem 1.2rem;
+  padding: .7rem clamp(.8rem, 2vw, 1.5rem);
+  border-bottom: 1px solid #293750;
+  background: #141d31;
+  color: #a9b7cd;
+  font: 500 .875rem/1.4 system-ui, sans-serif;
+}
+.graph-toolbar { background: #0b1020; }
+.graph-header-group { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; min-width: 0; }
+.graph-brand-icon { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .55rem; background: #73e0cc; }
+.graph-header select, .graph-toolbar select {
+  max-width: min(100%, 18.5rem);
+  min-height: 2.4rem;
+  padding: .35rem .65rem;
+  border: 1px solid #354560;
+  border-radius: .55rem;
+  background: #1b2940;
+  color: #eef3ff;
+  text-overflow: ellipsis;
+}
+.graph-header button, .graph-toolbar button { min-height: 2.4rem; }
+:focus-visible { outline: 3px solid #73e0cc !important; outline-offset: 3px; }
+@media (max-width: 600px) {
+  .graph-header { gap: .55rem; }
+  .graph-header-group:first-child { width: 100%; justify-content: space-between; }
+  .graph-header select, .graph-toolbar select { max-width: min(65vw, 18.5rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

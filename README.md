@@ -1,148 +1,68 @@
-# 🕸️ Codebase Knowledge Graph
+# Codebase Knowledge Graph
 
-> **An AI-Queryable AST & Call Graph Intelligence Engine**  
-> Ingests repositories, parses AST structures and call graphs into **Neo4j**, exposes a **GraphQL API**, and uses an **LLM-powered Cypher engine** to answer natural language architecture, blast radius, and dependency questions.
+Codebase Knowledge Graph turns source files into an interactive map of functions, classes, imports, calls and test relationships. Use it to explore an unfamiliar repository and estimate the impact of changing a symbol.
 
----
+## Quick start
 
-## 🌟 Key Highlights
+Use Node.js 22 or newer.
 
-- **Multi-Language AST & Call Graph Parsing**: Extracts `Functions`, `Classes`, `Modules`, `Files`, `Imports`, `Calls`, and `Tests` across TypeScript, JavaScript, Python, and Go.
-- **Neo4j Graph Database**: Full property graph model with optimized Cypher queries, transitive blast-radius traversals (`[:CALLS*1..5]`), APOC path algorithms, and an in-memory high-speed fallback driver.
-- **Apollo GraphQL API Gateway**: Type-safe GraphQL schema for graph querying (`graphData`), impact analysis (`blastRadius`), repository statistics (`stats`), and natural language AI queries (`askCodebase`).
-- **AI-Powered Natural Language ➔ Cypher Compiler**: Translates questions like *"What breaks if I change `processPayment`?"* or *"Show all callers of `AuthService`"* into executable Cypher queries + contextual blast-radius risk explanations + highlighted visual subgraphs.
-- **Interactive Visual Canvas**: 2D force-directed physics canvas with real-time node dragging, clustering, risk heatmaps, AST code inspector, and dynamic subgraph illumination.
-- **Cloud-Native DevOps**: Production Docker Compose, Kubernetes Helm Charts (with HPA, StatefulSet, and Ingress), and GitHub Actions CI/CD pipeline.
-
----
-
-## 🏗️ Architecture Overview
-
-```mermaid
-graph TD
-    subgraph Frontend ["Frontend (Next.js 14)"]
-        Canvas["Interactive 2D Force Canvas"]
-        Copilot["AI Query Copilot Drawer"]
-        Sidebar["Blast Radius Risk Inspector"]
-        CodeView["AST Code Inspector"]
-    end
-
-    subgraph Gateway ["GraphQL API Gateway (Apollo Server)"]
-        Schema["GraphQL Schema & Resolvers"]
-        AIEngine["Natural Language -> Cypher Compiler"]
-        ImpactEngine["Blast Radius & Risk Analyzer"]
-    end
-
-    subgraph ParserEngine ["Ingestion & AST Engine"]
-        Walker["File Walker & Symbol Resolver"]
-        AST["Multi-Language AST Parser"]
-        GraphGen["Call & Dependency Graph Builder"]
-    end
-
-    subgraph Storage ["Database Layer"]
-        Neo4j[("Neo4j 5.x Graph Database\nNodes: Repos, Files, Classes, Functions, Tests\nEdges: CONTAINS, CALLS, IMPORTS, TESTS")]
-    end
-
-    Canvas --> Schema
-    Copilot --> Schema
-    Sidebar --> Schema
-    Schema --> AIEngine
-    Schema --> ImpactEngine
-    AIEngine --> Neo4j
-    ImpactEngine --> Neo4j
-    Walker --> AST --> GraphGen --> Neo4j
-```
-
----
-
-## 📊 Graph Data Model
-
-### Node Labels
-| Label | Description | Key Properties |
-|---|---|---|
-| `:Repository` | Repository entity | `id`, `name`, `branch`, `url`, `totalFiles`, `totalFunctions` |
-| `:File` | Source code file | `path`, `extension`, `language`, `lineCount`, `exports` |
-| `:Class` | Class or Interface definition | `name`, `isExported`, `extendsClass`, `methods` |
-| `:Function` | Function or Class Method | `name`, `signature`, `cyclomaticComplexity`, `blastRadiusWeight` |
-| `:Test` | Test suite or test case | `name`, `testFramework`, `testType`, `targetSymbolNames` |
-
-### Relationships
-- `(:Repository)-[:CONTAINS]->(:File)`
-- `(:File)-[:DEFINES]->(:Class|Function)`
-- `(:Class)-[:HAS_METHOD]->(:Function)`
-- `(:Class)-[:EXTENDS]->(:Class)`
-- `(:File)-[:IMPORTS]->(:File)`
-- `(:Function)-[:CALLS {line: Int}]->(:Function)`
-- `(:Test)-[:TESTS]->(:Function|Class|File)`
-
----
-
-## ⚡ Quick Start
-
-### 1. Install Monorepo Dependencies
-```bash
-npm install
-```
-
-### 2. Start Local Development
-Runs the Apollo GraphQL Gateway (`http://localhost:4000/graphql`) and Next.js Web UI (`http://localhost:3000`):
-```bash
+~~~sh
+npm ci
 npm run dev
-```
+~~~
 
-### 3. Run with Docker Compose (Includes Neo4j 5.x)
-```bash
-docker compose up -d
-```
-- **Web UI:** [http://localhost:3000](http://localhost:3000)
-- **GraphQL Gateway:** [http://localhost:4000/graphql](http://localhost:4000/graphql)
-- **Neo4j Browser:** [http://localhost:7474](http://localhost:7474) (user: `neo4j`, pass: `codebase_kg_secret_password`)
+Open http://localhost:3000. The GraphQL gateway runs at http://localhost:4000/graphql. Two built-in sample repositories let you explore the application without a Neo4j instance, provider key, or private source code.
 
----
+1. Pick a sample repository and choose an entity type.
+2. Select an entity in the graph or use the keyboard-accessible entity picker.
+3. Inspect upstream relationships, impacted files and linked tests.
+4. Open **Ask codebase** and try “What breaks if I change executeTransaction?”
+5. Use **Ingest code** to inspect a source file you are authorized to share. The application selects the resulting graph automatically.
 
-## 🚀 Deploy to Kubernetes (EKS / Minikube)
+## Features and architecture
 
-```bash
-# Lint and test Helm chart
-helm lint infra/k8s/helm/codebase-kg
+| Component | Role |
+| --- | --- |
+| Next.js, React, TypeScript and Tailwind | Graph workspace, entity filtering, change-impact inspector, query drawer and code viewer |
+| Express and Apollo GraphQL | Serves repository metadata, graphs, search, ingestion and impact reports |
+| TypeScript ingestion engine | Extracts symbols and relationships using regex-based heuristics. Supports TypeScript, JavaScript and Python with limited generic extraction for other file types |
+| In-memory graph | Powers the web demo. Custom web ingests are lost when the gateway restarts |
+| Neo4j driver and ingestion CLI | Supports optional graph persistence through the CLI. The gateway reports connectivity separately |
+| Question planner | Uses built-in rules to query the loaded graph and displays illustrative Cypher |
 
-# Deploy with Helm
-helm upgrade --install codebase-kg infra/k8s/helm/codebase-kg \
-  --namespace codebase-kg \
-  --create-namespace \
-  --values infra/k8s/helm/codebase-kg/values.yaml
-```
+The browser renders up to 300 nodes from each filtered view. Reports can traverse the full loaded repository. The first impact report indexes nodes and relationships. Later reports reuse that index and examine the relevant adjacency lists.
 
----
+### Optional Neo4j
 
-## 💬 Example Natural Language AI Queries
+Run docker compose up -d neo4j and set the gateway connection details from .env.example if you use different values. For native local development, place gateway overrides in services/api-gateway/.env and set NEXT_PUBLIC_GRAPHQL_ENDPOINT in packages/web/.env.local when the API endpoint differs from the default. Inspect available graph import commands with npm run ingest -- --help.
 
-- **Blast Radius Analysis:**  
-  *"What breaks if I change `processPayment`?"*  
-  *(Generates Cypher for upstream transitive callers up to depth 3, calculates risk score, and maps affected test suites)*
-- **Call Graph Discovery:**  
-  *"Show me every place `chargeCard` is called"*  
-  *(Generates incoming `CALLS` Cypher and isolates the caller nodes)*
-- **Test Coverage Mapping:**  
-  *"Which tests cover `OrderService`?"*  
-  *(Traverses `TESTS` edges and reports unit/integration suites)*
-- **Architectural Hotspots:**  
-  *"Which functions have the highest cyclomatic complexity and risk?"*  
-  *(Queries PageRank and complexity indices to highlight structural risk centers)*
+The development gateway is designed for a single trusted workspace. Decide on authentication, repository isolation and a persistent store before accepting source from multiple users.
 
----
+## Build and test
 
-## 📁 Repository Structure
+~~~sh
+npm run build
+npm test
+~~~
 
-```
-├── services/
-│   ├── ingestion-engine/   # Multi-language AST parser, symbol resolution, Neo4j batch ingester
-│   └── api-gateway/        # Apollo GraphQL server, AI Cypher compiler, blast radius engine
-├── packages/
-│   └── web/                # Next.js 14 interactive knowledge graph visualizer & AI copilot
-├── infra/
-│   └── k8s/helm/           # Kubernetes Helm charts (Neo4j StatefulSet, API Deployments, Ingress, HPA)
-├── .github/workflows/      # GitHub Actions CI/CD workflows
-├── docker-compose.yml      # Local container orchestration
-└── package.json            # Monorepo workspaces
-```
+The tests cover GraphQL startup and sample repository selection in addition to cycles, depth zero, affected tests, unknown repositories and graph edge consistency after truncation.
+
+## Portfolio media
+
+![Change-impact inspector showing caller relationships on a sample repository](docs/impact.jpg)
+
+| Capture | What to show |
+| --- | --- |
+| Workspace screenshot | A sample repository with an inspected function and its impact report |
+| Demo clip | Repository selection, entity picker, call dependencies and one built-in query |
+
+### 35-second demo
+
+| Time | Screen | Narration |
+| --- | --- | --- |
+| 0–7s | Open the payments sample | “I built an interactive map for understanding a codebase before changing it.” |
+| 7–18s | Select a function with the entity picker | “Choosing a function surfaces its callers, the files it could affect and tests linked to the graph.” |
+| 18–29s | Open Ask codebase and ask about executeTransaction | “The built-in query planner gives me a structured answer from the same graph.” |
+| 29–35s | Return to the highlighted network | “I can use that evidence to decide what to inspect and test next.” |
+
+Record at 1440 × 900. Keep the repository name visible, pause on the result and add captions. Use the public sample so the recording contains no private source.

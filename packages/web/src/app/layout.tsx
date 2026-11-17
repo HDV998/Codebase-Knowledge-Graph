@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Codebase Knowledge Graph | AI-Queryable Architecture Visualizer',
-  description: 'AI-Queryable AST and Call Graph Intelligence Engine with Neo4j and Claude LLM',
+  description: 'Explore code relationships, inspect change impact, and query sample repositories.',
 };
 
 export default function RootLayout({

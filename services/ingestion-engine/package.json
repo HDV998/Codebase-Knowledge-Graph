@@ -7,13 +7,12 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
-    "ingest": "ts-node src/cli.ts",
-    "test": "jest --passWithNoTests"
+    "ingest": "ts-node src/cli.ts"
   },
   "dependencies": {
     "commander": "^12.0.0",
     "dotenv": "^16.4.5",
-    "glob": "^10.3.10",
+    "glob": "^14.0.6",
     "neo4j-driver": "^5.18.0"
   },
   "devDependencies": {

@@ -131,6 +131,7 @@ export class CodeParser {
       /(?:public|private|protected|static|\s)*\s+(?:async\s+)?(\w+)\s*\(([^)]*)\)(?:\s*:\s*([^\{\n]+))?\s*\{/g
     ];
 
+    const functionIds = new Set<string>();
     for (const pattern of funcPatterns) {
       while ((match = pattern.exec(content)) !== null) {
         const fullMatch = match[0];
@@ -148,14 +149,13 @@ export class CodeParser {
 
         // Determine if method of a class
         const parentClass = classes.find(c => lineNum >= c.startLine && lineNum <= c.endLine);
-        if (parentClass) {
-          parentClass.methods.push(funcName);
-        }
-
-        if (isExported) exportedSymbols.push(funcName);
-
         const funcId = `func:${this.repoId}:${file.filePath}:${parentClass ? parentClass.name + '.' : ''}${funcName}`;
         
+        if (functionIds.has(funcId)) continue;
+        functionIds.add(funcId);
+        if (parentClass) parentClass.methods.push(funcName);
+        if (isExported) exportedSymbols.push(funcName);
+
         // Extract snippet (up to 15 lines)
         const endLine = Math.min(lineNum + 15, lines.length);
         const snippet = lines.slice(lineNum - 1, endLine).join('\n');
